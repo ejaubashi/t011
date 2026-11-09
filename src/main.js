@@ -1,4 +1,6 @@
 import './style.css';
+import { createGalleryMotion } from './gallery-motion.js';
+import { cancelPageMotion, openCase, closeCase, animateTextPanel, mountCaseScroll, playEntrance } from './page-motion.js';
 
 const basePath = import.meta.env.BASE_URL;
 const routeUrl = path => basePath + path.replace(/^\/+/, '');
@@ -22,6 +24,9 @@ const app = document.querySelector('#app');
 let active = 0;
 let currentRoute = '/';
 let lastWheel = 0;
+let wheelDelta = 0;
+let wheelReset;
+let suppressCardClickUntil = 0;
 let touchY = 0;
 let opener = null;
 let loaderDone = sessionStorage.getItem('osply-visited') === 'yes';
@@ -49,6 +54,9 @@ app.innerHTML = `
 
 const gallery = document.querySelector('.gallery');
 const overlay = document.querySelector('#overlay');
+const motion = createGalleryMotion(document.querySelector('.project-track'));
+let disposeCaseMotion = () => {};
+let appStarted = false;
 
 function updateGallery(direction = 0) {
   document.querySelectorAll('.project-card').forEach((card, i) => {
@@ -69,12 +77,15 @@ function updateGallery(direction = 0) {
     el.setAttribute('aria-pressed', String(i === active));
     el.style.order = (i - active + 4) % 4;
   });
-  if (direction) {
-    gallery.classList.remove('moving');
-    requestAnimationFrame(() => gallery.classList.add('moving'));
+  motion.goTo(active, direction);
+  if (direction && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.querySelectorAll('.project-number, .project-services, .project-industry').forEach(el => {
+      el.getAnimations().forEach(animation => animation.cancel());
+      el.animate([{ opacity: 0, transform: `translateY(${direction * 12}px)` }, { opacity: 1, transform: 'translateY(0)' }], { duration: 480, easing: 'cubic-bezier(.22,.78,.18,1)' });
+    });
   }
 }
-function select(index) { active = (index + projects.length) % projects.length; updateGallery(1); }
+function select(index) { const direction = Math.sign(index - active); active = (index + projects.length) % projects.length; updateGallery(direction); }
 
 function navigate(path, replace = false) {
   if (path === currentRoute) return;
@@ -83,9 +94,12 @@ function navigate(path, replace = false) {
 }
 
 function renderRoute(path) {
+  disposeCaseMotion();
+  cancelPageMotion();
   const wasHome = currentRoute === '/';
   currentRoute = path;
   if (path === '/') {
+    closeCase(overlay.querySelector('.case-hero'), document.querySelector('.project-card.selected'));
     overlay.hidden = true;
     overlay.innerHTML = '';
     document.querySelector('.studio').inert = false;
@@ -127,6 +141,10 @@ function renderRoute(path) {
     document.title = 'Contact — OSPLY';
     overlay.innerHTML = `<section class="text-panel contact-panel"><div class="panel-top"><span>LET'S START A CONVERSATION</span><button data-close>CLOSE ${arrow}</button></div><h1>Good things<br>start with hello.</h1><a class="contact-email" href="mailto:hi@osply.co">hi@osply.co ${arrow}</a><div class="contact-bottom"><p>Have a project in mind?<br>Tell us what you're thinking.</p><button id="copy-email">COPY EMAIL ${arrow}</button><span class="copy-status" role="status"></span></div></section>`;
   } else { navigate('/', true); return; }
+  if (p) {
+    if (wasHome && appStarted) openCase(document.querySelector('.project-card.selected'), overlay);
+    disposeCaseMotion = mountCaseScroll(overlay);
+  } else animateTextPanel(overlay);
   requestAnimationFrame(() => overlay.querySelector('[data-close]')?.focus({ preventScroll: true }));
 }
 
@@ -138,6 +156,7 @@ document.addEventListener('click', async event => {
   const close = event.target.closest('[data-close]');
   if (close) { navigate('/'); return; }
   const card = event.target.closest('[data-project]');
+  if (card && Date.now() < suppressCardClickUntil) return;
   if (card) { const i = Number(card.dataset.project); if (i === active) navigate(`/work/${projects[i].slug}`); else select(i); }
   const selector = event.target.closest('[data-select]');
   if (selector) select(Number(selector.dataset.select));
@@ -151,13 +170,16 @@ document.addEventListener('click', async event => {
   }
 });
 window.addEventListener('wheel', e => {
-  if (currentRoute !== '/' || Math.abs(e.deltaY) < 8) return;
+  if (currentRoute !== '/' || e.ctrlKey) return;
   e.preventDefault();
-  if (Date.now() - lastWheel < 750) return;
-  lastWheel = Date.now(); select(active + Math.sign(e.deltaY));
+  wheelDelta += e.deltaY;
+  clearTimeout(wheelReset);
+  wheelReset = setTimeout(() => { wheelDelta = 0; }, 180);
+  if (Date.now() - lastWheel < 220 || Math.abs(wheelDelta) < 28) return;
+  lastWheel = Date.now(); select(active + Math.sign(wheelDelta)); wheelDelta = 0;
 }, { passive: false });
 gallery.addEventListener('touchstart', e => { touchY = e.touches[0].clientY; }, { passive: true });
-gallery.addEventListener('touchend', e => { const dy = touchY - e.changedTouches[0].clientY; if (Math.abs(dy) > 35) select(active + Math.sign(dy)); }, { passive: true });
+gallery.addEventListener('touchend', e => { const dy = touchY - e.changedTouches[0].clientY; if (Math.abs(dy) > 35) { suppressCardClickUntil = Date.now() + 400; select(active + Math.sign(dy)); } }, { passive: true });
 document.addEventListener('keydown', e => {
   if (currentRoute !== '/') {
     if (e.key === 'Escape') navigate('/');
@@ -176,6 +198,8 @@ document.addEventListener('keydown', e => {
 window.addEventListener('popstate', () => renderRoute(routeFromPath(location.pathname)));
 updateGallery();
 if (routeFromPath(location.pathname) !== '/') renderRoute(routeFromPath(location.pathname));
+appStarted = true;
+if (loaderDone && currentRoute === '/') playEntrance(motion, true);
 if (!loaderDone) {
   const start = performance.now();
   const tick = now => {
@@ -183,7 +207,7 @@ if (!loaderDone) {
     document.querySelector('.progress').textContent = `${progress}%`;
     document.querySelector('.loader-bar').style.width = `${Math.max(12, progress)}%`;
     if (progress < 100) requestAnimationFrame(tick);
-    else { document.querySelector('.loader').classList.add('done'); sessionStorage.setItem('osply-visited', 'yes'); }
+    else { document.querySelector('.loader').classList.add('done'); sessionStorage.setItem('osply-visited', 'yes'); if (currentRoute === '/') playEntrance(motion); }
   };
   requestAnimationFrame(tick);
 }

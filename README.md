@@ -18,6 +18,8 @@ npm run preview -- --port 3000
 
 ## Interactions
 
+- The project reel uses a WebGL mesh for velocity-driven curvature, eased momentum and pointer parallax, with a DOM image fallback.
+- A wordmark entrance and project-to-case-study zoom connect the pages. Case imagery reveals and gently distorts on scroll.
 - Scroll, swipe, use arrow keys, click project names or use the up/down controls to move between four projects.
 - Click the selected project to open its case study. Desktop has a fixed information panel and a separately scrolling image column; mobile uses a single scrolling layout.
 - Close with the Close button or Escape. Project routes support direct entry and browser back/forward navigation.
@@ -36,6 +38,7 @@ With the server on port 3000, Python Playwright installed, and Chromium at `/usr
 
 ```sh
 python tests/smoke.py
+python tests/motion.py
 ```
 
 Checks desktop carousel navigation, all case studies, case scrolling, modal closing, browser history, About/Contact, mobile overflow and direct project URLs. Screenshots are saved outside the repository in `/tmp/osply-checks`.
