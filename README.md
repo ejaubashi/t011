@@ -18,8 +18,9 @@ npm run preview -- --port 3000
 
 ## Interactions
 
-- The project reel uses a WebGL mesh for velocity-driven curvature, eased momentum and pointer parallax, with a DOM image fallback.
+- The project reel uses a perspective-projected WebGL surface with depth deformation, subtle directional shading, cover-correct texture cropping, pointer tilt and a DOM image fallback. Canvas resolution decreases after sustained slow rendering frames.
 - A wordmark entrance and project-to-case-study zoom connect the pages. Case imagery reveals and gently distorts on scroll.
+- Wheel/trackpad deltas move the reel continuously; touch and mouse dragging follow the pointer with release momentum. A critically damped spring settles on the nearest project after input stops, with consistent 60/120 Hz timing.
 - Scroll, swipe, use arrow keys, click project names or use the up/down controls to move between four projects.
 - Click the selected project to open its case study. Desktop has a fixed information panel and a separately scrolling image column; mobile uses a single scrolling layout.
 - Close with the Close button or Escape. Project routes support direct entry and browser back/forward navigation.
@@ -39,6 +40,8 @@ With the server on port 3000, Python Playwright installed, and Chromium at `/usr
 ```sh
 python tests/smoke.py
 python tests/motion.py
+python tests/reel-browser.py
+node --test tests/reel-physics.test.js
 ```
 
 Checks desktop carousel navigation, all case studies, case scrolling, modal closing, browser history, About/Contact, mobile overflow and direct project URLs. Screenshots are saved outside the repository in `/tmp/osply-checks`.

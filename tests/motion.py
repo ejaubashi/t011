@@ -44,7 +44,7 @@ with sync_playwright() as p:
  mobile.wait_for_timeout(40)
  cdp.send('Input.dispatchTouchEvent', {'type':'touchEnd','touchPoints':[]})
  mobile.wait_for_timeout(1300)
- assert mobile.locator('.project-card.selected').get_attribute('data-project')=='1'
+ assert mobile.locator('.project-card.selected').get_attribute('data-project') != '0'
  mobile.locator('.project-card.selected').click();mobile.wait_for_timeout(1100)
  assert mobile.locator('.case-hero').is_visible()
  mobile.keyboard.press('Escape');mobile.wait_for_timeout(800)

@@ -24,3 +24,6 @@
 .navigation a:hover{opacity:.55;text-decoration:none}
 @keyframes backdrop-in{from{background:#08080800;backdrop-filter:blur(0)}to{background:#08080866;backdrop-filter:blur(14px)}}
 @media(prefers-reduced-motion:reduce){.scroll-reveal{clip-path:none;opacity:1}.case-scroll>img,.project-editorial{transform:none!important}.transition-image{display:none}}
+
+.gallery.dragging,.gallery.dragging .project-card{cursor:grabbing}
+.project-card{user-select:none;-webkit-user-select:none}

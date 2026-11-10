@@ -23,11 +23,8 @@ const arrow = '<svg class="arrow" viewBox="0 0 16 16" aria-hidden="true"><path d
 const app = document.querySelector('#app');
 let active = 0;
 let currentRoute = '/';
-let lastWheel = 0;
-let wheelDelta = 0;
-let wheelReset;
+let dragGesture = null;
 let suppressCardClickUntil = 0;
-let touchY = 0;
 let opener = null;
 let loaderDone = sessionStorage.getItem('osply-visited') === 'yes';
 
@@ -54,11 +51,15 @@ app.innerHTML = `
 
 const gallery = document.querySelector('.gallery');
 const overlay = document.querySelector('#overlay');
-const motion = createGalleryMotion(document.querySelector('.project-track'));
+const motion = createGalleryMotion(document.querySelector('.project-track'), (index, direction) => {
+  if (currentRoute !== '/') return;
+  active = index;
+  updateGallery(direction, false);
+});
 let disposeCaseMotion = () => {};
 let appStarted = false;
 
-function updateGallery(direction = 0) {
+function updateGallery(direction = 0, move = true) {
   document.querySelectorAll('.project-card').forEach((card, i) => {
     let offset = (i - active + projects.length) % projects.length;
     if (offset > 2) offset -= projects.length;
@@ -77,7 +78,7 @@ function updateGallery(direction = 0) {
     el.setAttribute('aria-pressed', String(i === active));
     el.style.order = (i - active + 4) % 4;
   });
-  motion.goTo(active, direction);
+  if (move) motion.goTo(active, direction, currentRoute !== '/');
   if (direction && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
     document.querySelectorAll('.project-number, .project-services, .project-industry').forEach(el => {
       el.getAnimations().forEach(animation => animation.cancel());
@@ -85,7 +86,7 @@ function updateGallery(direction = 0) {
     });
   }
 }
-function select(index) { const direction = Math.sign(index - active); active = (index + projects.length) % projects.length; updateGallery(direction); }
+function select(index) { motion.goTo((index + projects.length) % projects.length, Math.sign(index - active)); }
 
 function navigate(path, replace = false) {
   if (path === currentRoute) return;
@@ -161,7 +162,7 @@ document.addEventListener('click', async event => {
   const selector = event.target.closest('[data-select]');
   if (selector) select(Number(selector.dataset.select));
   const step = event.target.closest('[data-step]');
-  if (step) select(active + Number(step.dataset.step));
+  if (step) motion.step(Number(step.dataset.step));
   const next = event.target.closest('[data-next]');
   if (next) navigate(`/work/${projects[Number(next.dataset.next)].slug}`);
   if (event.target.closest('#copy-email')) {
@@ -172,14 +173,39 @@ document.addEventListener('click', async event => {
 window.addEventListener('wheel', e => {
   if (currentRoute !== '/' || e.ctrlKey) return;
   e.preventDefault();
-  wheelDelta += e.deltaY;
-  clearTimeout(wheelReset);
-  wheelReset = setTimeout(() => { wheelDelta = 0; }, 180);
-  if (Date.now() - lastWheel < 220 || Math.abs(wheelDelta) < 28) return;
-  lastWheel = Date.now(); select(active + Math.sign(wheelDelta)); wheelDelta = 0;
+  const pixels = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? innerHeight : 1);
+  motion.wheel(pixels, performance.now());
 }, { passive: false });
-gallery.addEventListener('touchstart', e => { touchY = e.touches[0].clientY; }, { passive: true });
-gallery.addEventListener('touchend', e => { const dy = touchY - e.changedTouches[0].clientY; if (Math.abs(dy) > 35) { suppressCardClickUntil = Date.now() + 400; select(active + Math.sign(dy)); } }, { passive: true });
+gallery.addEventListener('pointerdown', e => {
+  if (currentRoute !== '/' || !e.isPrimary || e.button !== 0 || e.target.closest('[data-select], [data-step], a')) return;
+  dragGesture = { id: e.pointerId, x: e.clientX, y: e.clientY, lastY: e.clientY, moved: false };
+});
+gallery.addEventListener('pointermove', e => {
+  const gesture = dragGesture;
+  if (!gesture || gesture.id !== e.pointerId) return;
+  if (!gesture.moved) {
+    if (Math.abs(e.clientY - gesture.y) < 6 || Math.abs(e.clientY - gesture.y) < Math.abs(e.clientX - gesture.x)) return;
+    gesture.moved = true;
+    motion.beginDrag(performance.now() - 16);
+    gallery.setPointerCapture(e.pointerId);
+    gallery.classList.add('dragging');
+  }
+  e.preventDefault();
+  motion.drag(gesture.lastY - e.clientY, performance.now());
+  gesture.lastY = e.clientY;
+}, { passive: false });
+function endGesture(e) {
+  if (!dragGesture || dragGesture.id !== e.pointerId) return;
+  if (dragGesture.moved) {
+    suppressCardClickUntil = Date.now() + 400;
+    motion.endDrag(performance.now(), e.type !== 'pointerup');
+  }
+  dragGesture = null;
+  gallery.classList.remove('dragging');
+}
+gallery.addEventListener('pointerup', endGesture);
+gallery.addEventListener('pointercancel', endGesture);
+gallery.addEventListener('lostpointercapture', endGesture);
 document.addEventListener('keydown', e => {
   if (currentRoute !== '/') {
     if (e.key === 'Escape') navigate('/');
@@ -192,7 +218,7 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (['ArrowDown','ArrowRight','ArrowUp','ArrowLeft'].includes(e.key)) {
-    e.preventDefault(); select(active + (['ArrowDown', 'ArrowRight'].includes(e.key) ? 1 : -1));
+    e.preventDefault(); motion.step(['ArrowDown', 'ArrowRight'].includes(e.key) ? 1 : -1);
   }
 });
 window.addEventListener('popstate', () => renderRoute(routeFromPath(location.pathname)));
