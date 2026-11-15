@@ -16,13 +16,23 @@ function flyImage(source, destination, opening) {
   image.alt = ''; image.setAttribute('aria-hidden', 'true');
   Object.assign(image.style, { left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px`, height: `${from.height}px` });
   document.body.append(image);
+  const aura = document.createElement('div');
+  aura.className = 'flight-aura'; aura.setAttribute('aria-hidden','true');
+  document.body.append(aura);
+  aura.animate([
+    { opacity:0, transform:`translate(${from.left+from.width/2}px,${from.top+from.height/2}px) scale(.4)` },
+    { opacity:.8, offset:.35, transform:`translate(${to.left+to.width/2}px,${to.top+to.height/2}px) scale(1)` },
+    { opacity:0, transform:`translate(${to.left+to.width/2}px,${to.top+to.height/2}px) scale(1.5)` },
+  ], {duration:opening?850:650,easing:'cubic-bezier(.2,.75,.2,1)',fill:'forwards'});
+  const dx=to.left-from.left,dy=to.top-from.top,sx=to.width/from.width,sy=to.height/from.height;
   if (opening) destination.style.visibility = 'hidden';
   const animation = image.animate([
-    { transform: 'translate(0,0) scale(1,1)', opacity: 1 },
-    { transform: `translate(${to.left - from.left}px,${to.top - from.top}px) scale(${to.width / from.width},${to.height / from.height})`, opacity: 1 },
+    { transform: 'translate(0,0) scale(1,1)', opacity: 1, filter:'saturate(.8)', borderRadius:'3px' },
+    { offset:.42, transform:`translate(${dx*.5}px,${dy*.5-22}px) perspective(1200px) rotateY(${opening?-10:8}deg) rotateZ(${opening?-1:1}deg) scale(${1+(sx-1)*.5},${1+(sy-1)*.5})`, opacity:1, filter:'saturate(1.08)', borderRadius:'12px' },
+    { transform: `translate(${dx}px,${dy}px) scale(${sx},${sy})`, opacity: 1, filter:'saturate(1)', borderRadius:opening?'0px':'3px' },
   ], { duration: opening ? 850 : 650, easing: 'cubic-bezier(.22,.78,.18,1)', fill: 'forwards' });
   flights.add(animation);
-  const finish = () => { image.remove(); destination.style.visibility = ''; flights.delete(animation); };
+  const finish = () => { image.remove(); aura.remove(); destination.style.visibility = ''; flights.delete(animation); };
   animation.finished.then(finish, finish);
 }
 
@@ -77,11 +87,15 @@ export function mountCaseScroll(overlay) {
 
 export function playEntrance(motion, short = false) {
   if (reduceMotion()) return;
-  const header = document.querySelector('.masthead');
-  header.animate([
-    { transform: `translateY(${short ? 60 : innerHeight - header.clientHeight - 24}px)`, opacity: short ? 0 : 1 },
-    { transform: 'translateY(0)', opacity: 1 },
-  ], { duration: short ? 700 : 1250, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  document.querySelectorAll('.wordmark > path').forEach((letter, index) => {
+    letter.animate([
+      { transform: 'translateY(110%) rotateX(-70deg) scaleY(.45)', opacity: 0 },
+      { transform: 'translateY(0) rotateX(0) scaleY(1)', opacity: 1 },
+    ], { duration: short ? 700 : 1100, delay:index*(short?45:75), fill:'backwards', easing:'cubic-bezier(.16,.85,.2,1)' });
+  });
+  document.querySelectorAll('.project-caption, .studio-note').forEach((el,index) => {
+    el.animate([{opacity:0,transform:'translateY(25px)',filter:'blur(8px)'},{opacity:1,transform:'translateY(0)',filter:'blur(0)'}], {duration:900,delay:(short?100:400)+index*100,fill:'backwards',easing:'cubic-bezier(.2,.75,.2,1)'});
+  });
   document.querySelector('.navigation').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 650, delay: short ? 0 : 400, fill: 'backwards' });
   document.querySelector('.project-track').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 900, delay: short ? 0 : 180, fill: 'backwards' });
   if (!short) motion.intro();

@@ -16,6 +16,16 @@ npm run build
 npm run preview -- --port 3000
 ```
 
+## Visual experience
+
+The current art direction uses a chrome SVG wordmark with staggered letter entrances, an ambient light field, editorial project captions, magnetic navigation, and a frosted project cursor on fine-pointer devices.
+
+A custom 128×128 GPU flow field uses two RGBA8 render targets. Mouse movement and touch dragging inject velocity; the field advects and dissipates, displacing the focused image's texture coordinates with a restrained refractive colour separation. The field returns to a neutral texture and the render loop sleeps after it settles. Floating-point texture extensions are not required.
+
+Project openings use a sculpted image flight and a short light bloom. Navigation between open project or text panels progressively uses the browser's same-document View Transition API, with named image, information and overlay snapshots. Revision guards cancel superseded route callbacks so Escape and rapid navigation cannot reopen a closed panel. The ordinary DOM/WAAPI paths remain available without that API; reduced motion suppresses decorative movement.
+
+Research references and the implemented scope are recorded in [the visual implementation notes](docs/liquid-metal-implementation.md).
+
 ## Interactions
 
 - The project reel uses a perspective-projected WebGL surface with depth deformation, subtle directional shading, cover-correct texture cropping, pointer tilt and a DOM image fallback. Canvas resolution decreases after sustained slow rendering frames.
@@ -35,12 +45,13 @@ The live reference was unavailable through the environment's network policy. The
 
 ## Browser checks
 
-With the server on port 3000, Python Playwright installed, and Chromium at `/usr/bin/chromium`:
+With the server on port 3000, Python Playwright and Pillow installed, and Chromium at `/usr/bin/chromium`:
 
 ```sh
 python tests/smoke.py
 python tests/motion.py
 python tests/reel-browser.py
+python tests/special-effects.py
 node --test tests/reel-physics.test.js
 ```
 

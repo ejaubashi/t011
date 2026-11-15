@@ -1,4 +1,5 @@
 import { createReelPhysics } from './reel-physics.js';
+import { createFlowField } from './flow-field.js';
 
 // A small WebGL image reel. DOM buttons remain the interactive and accessible layer.
 const vertexSource = `
@@ -12,8 +13,11 @@ uniform float uDepth;
 uniform vec2 uRotation;
 varying vec2 vUv;
 varying float vLight;
+varying vec2 vScreenUv;
+varying vec2 vSurfaceUv;
 void main() {
   vUv = aPosition * uUvScale + .5;
+  vSurfaceUv = aPosition + .5;
   vec3 p = vec3(aPosition * uSize, 0.0);
   float arch = cos(aPosition.x * 3.14159265);
   // Deform the actual surface in depth, then rotate it in camera space.
@@ -27,21 +31,37 @@ void main() {
   float w = 1.0 - (p.z + uDepth) / focal;
   vec2 center = vec2(uCenter.x / uViewport.x * 2.0 - 1.0, 1.0 - uCenter.y / uViewport.y * 2.0);
   gl_Position = vec4(center * w + vec2(p.x / uViewport.x, -p.y / uViewport.y) * 2.0, -p.z / focal, w);
+  vScreenUv = vec2((uCenter.x + p.x/w)/uViewport.x, 1.0-(uCenter.y+p.y/w)/uViewport.y);
   vLight = 1.0 + sin(aPosition.x * 3.14159265) * uBend * .14;
 }`;
 const fragmentSource = `
 precision mediump float;
 uniform sampler2D uTexture;
+uniform sampler2D uFlow;
 uniform float uFocus;
 uniform float uOpacity;
+uniform float uFluid;
+uniform float uSpeed;
 varying vec2 vUv;
+varying vec2 vScreenUv;
+varying vec2 vSurfaceUv;
 varying float vLight;
 void main() {
-  vec4 image = texture2D(uTexture, vUv);
-  float gray = dot(image.rgb, vec3(.299, .587, .114));
-  vec3 color = mix(vec3(gray), image.rgb, uFocus);
-  float alpha = image.a * uOpacity;
-  gl_FragColor = vec4(color * mix(.42, 1.0, uFocus) * vLight * alpha, alpha);
+  vec3 field = texture2D(uFlow, vScreenUv).rgb;
+  vec2 velocity = (field.rg-vec2(128./255.))*(255./127.);
+  vec2 displacement = velocity*.045*uFocus*uFluid;
+  vec2 uv=clamp(vUv+displacement,vec2(.001),vec2(.999));
+  // Optical separation is tied to movement and relaxes back to the source image.
+  vec2 refraction=displacement*.16+vec2(uSpeed*.0006,0.);
+  vec3 image=vec3(texture2D(uTexture,clamp(uv+refraction,.001,.999)).r,
+    texture2D(uTexture,uv).g,texture2D(uTexture,clamp(uv-refraction,.001,.999)).b);
+  float gray=dot(image,vec3(.299,.587,.114));
+  vec3 color=mix(vec3(gray),image,uFocus);
+  float edge=min(min(vSurfaceUv.x,1.-vSurfaceUv.x),min(vSurfaceUv.y,1.-vSurfaceUv.y));
+  float rim=(1.-smoothstep(0.,.007,edge))*.12*uFocus;
+  color+=vec3(.65,.78,.95)*(field.b*.075*uFocus*uFluid+rim);
+  float alpha=uOpacity*smoothstep(0.,.002,edge);
+  gl_FragColor=vec4(color*mix(.4,1.,uFocus)*vLight*alpha,alpha);
 }`;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
@@ -53,7 +73,8 @@ export function createGalleryMotion(track, onSelect = () => {}) {
   canvas.className = 'reel-canvas';
   canvas.setAttribute('aria-hidden', 'true');
   track.prepend(canvas);
-  let gl, program, buffers, uniforms, textures = [];
+  let gl, program, buffers, uniforms, flow, textures = [];
+  let lastPointer = null;
   const physics = createReelPhysics(cards.length);
   let frame = 0, lastTime = 0, selected = 0;
   let pixelRatio = Math.min(devicePixelRatio || 1, 1.75), frameAverage = 16.67, slowFrames = 0;
@@ -70,6 +91,8 @@ export function createGalleryMotion(track, onSelect = () => {}) {
     gl = null;
     canvas.remove();
     track.classList.remove('webgl-ready');
+    track.dataset.fluidReady = 'false';
+    flow = null;
   }
   try {
     gl = canvas.getContext('webgl', { alpha: true, antialias: true, premultipliedAlpha: true });
@@ -81,7 +104,7 @@ export function createGalleryMotion(track, onSelect = () => {}) {
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error('Reel program linking failed');
     gl.useProgram(program);
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    uniforms = Object.fromEntries(['uViewport','uCenter','uSize','uUvScale','uBend','uDepth','uRotation','uFocus','uOpacity'].map(name => [name, gl.getUniformLocation(program, name)]));
+    uniforms = Object.fromEntries(['uViewport','uCenter','uSize','uUvScale','uBend','uDepth','uRotation','uFocus','uOpacity','uFlow','uFluid','uSpeed'].map(name => [name, gl.getUniformLocation(program, name)]));
     const vertices = [], indices = [], columns = 40, rows = 24;
     for (let y = 0; y <= rows; y++) for (let x = 0; x <= columns; x++) vertices.push(x / columns - .5, y / rows - .5);
     for (let y = 0; y < rows; y++) for (let x = 0; x < columns; x++) {
@@ -91,7 +114,8 @@ export function createGalleryMotion(track, onSelect = () => {}) {
     const vertex = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vertex); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
     const attribute = gl.getAttribLocation(program, 'aPosition'); gl.enableVertexAttribArray(attribute); gl.vertexAttribPointer(attribute, 2, gl.FLOAT, false, 0, 0);
     const index = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, index); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
-    buffers = { count: indices.length };
+    buffers = { count: indices.length, vertex, index, attribute };
+    try { flow = createFlowField(gl); track.dataset.fluidReady = 'true'; } catch { flow = null; }
     cards.forEach((card, i) => {
       const image = card.querySelector('img');
       const upload = () => {
@@ -146,6 +170,14 @@ export function createGalleryMotion(track, onSelect = () => {}) {
       }
     }
     if (gl) {
+      if (flow && !reduced.matches) flow.update(dt / 1000, width / height);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertex);
+      gl.enableVertexAttribArray(buffers.attribute);
+      gl.vertexAttribPointer(buffers.attribute, 2, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.index);
       gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
       gl.useProgram(program); gl.uniform2f(uniforms.uViewport, width, height);
     }
@@ -171,7 +203,11 @@ export function createGalleryMotion(track, onSelect = () => {}) {
     }).sort((a,b) => b.distance - a.distance);
     if (gl) entries.forEach(({ i, distance, focus, scale, x, y, bend, depth, pitch, yaw, opacity }) => {
       if (!textures[i] || distance > 1.85) return;
-      gl.bindTexture(gl.TEXTURE_2D, textures[i]);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, flow?.texture || textures[i]);
+      gl.uniform1i(uniforms.uFlow, 1);
+      gl.uniform1f(uniforms.uFluid, flow && !reduced.matches ? 1 : 0);
+      gl.uniform1f(uniforms.uSpeed, reduced.matches ? 0 : clamp(velocity, -4, 4)*focus);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, textures[i]);
       gl.uniform2f(uniforms.uCenter, x, y); gl.uniform2f(uniforms.uSize, cardWidth * scale, cardHeight * scale);
       const image = cards[i].querySelector('img');
       const imageAspect = image.naturalWidth / image.naturalHeight;
@@ -181,21 +217,34 @@ export function createGalleryMotion(track, onSelect = () => {}) {
       gl.uniform2f(uniforms.uRotation, pitch, yaw);
       gl.uniform1f(uniforms.uFocus, focus); gl.uniform1f(uniforms.uOpacity, opacity); gl.drawElements(gl.TRIANGLES, buffers.count, gl.UNSIGNED_SHORT, 0);
     });
-    if (physics.mode !== 'idle' || Math.abs(px - pointerX) + Math.abs(py - pointerY) > .002) wake();
+    track.dataset.flowEnergy = (flow?.energy || 0).toFixed(3);
+    if ((flow?.energy || 0) > .002 || physics.mode !== 'idle' || Math.abs(px - pointerX) + Math.abs(py - pointerY) > .002) wake();
     else lastTime = 0;
   }
   function wake() { if (!frame) frame = requestAnimationFrame(draw); }
   track.parentElement.addEventListener('pointermove', e => {
-    if (!pointerDevice.matches || reduced.matches) return;
-    px = (e.clientX / width - .5) * 2; py = (e.clientY / height - .5) * 2; wake();
+    if (reduced.matches || (!pointerDevice.matches && e.pointerType !== 'touch')) return;
+    if (pointerDevice.matches) { px = (e.clientX / width - .5) * 2; py = (e.clientY / height - .5) * 2; }
+    const now=performance.now();
+    if (flow && lastPointer && (e.target.closest('.project-card.selected') || track.parentElement.classList.contains('dragging')) && !document.body.classList.contains('overlay-open')) {
+      const dt=Math.max(10,now-lastPointer.time);
+      flow.splat(e.clientX/width,1-e.clientY/height,(e.clientX-lastPointer.x)/dt*.12,(lastPointer.y-e.clientY)/dt*.12);
+    }
+    lastPointer={x:e.clientX,y:e.clientY,time:now}; wake();
   });
-  track.parentElement.addEventListener('pointerleave', () => { px = py = 0; wake(); });
-  reduced.addEventListener('change', () => { if (reduced.matches) px = py = 0; wake(); });
+  track.parentElement.addEventListener('pointerdown', e => { lastPointer={x:e.clientX,y:e.clientY,time:performance.now()}; }, {passive:true});
+  track.parentElement.addEventListener('pointerleave', () => { px = py = 0; lastPointer = null; wake(); });
+  reduced.addEventListener('change', () => { if (reduced.matches) { px = py = 0; flow?.clear(); } wake(); });
   new ResizeObserver(resize).observe(track);
   track.classList.add('motion-ready'); resize();
+  // Reduced-motion controls update synchronously; they need no animation-frame delay.
+  function respond() {
+    if (reduced.matches) { cancelAnimationFrame(frame); draw(performance.now()); }
+    else wake();
+  }
   return {
-    goTo(index, direction = 0, immediate = false) { physics.goTo(index, direction, immediate); wake(); },
-    step(direction) { physics.stepBy(direction); wake(); },
+    goTo(index, direction = 0, immediate = false) { physics.goTo(index, direction, immediate); respond(); },
+    step(direction) { physics.stepBy(direction); respond(); },
     wheel(pixels, now) { physics.wheel(pixels / clamp(cardHeight * 1.15, 360, 580), now); wake(); },
     beginDrag(now) { physics.beginDrag(now); wake(); },
     drag(pixels, now) { physics.drag(pixels / (cardHeight * .85), now); wake(); },

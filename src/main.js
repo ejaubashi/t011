@@ -1,4 +1,5 @@
 import './style.css';
+import { createExperience } from './experience.js';
 import { createGalleryMotion } from './gallery-motion.js';
 import { cancelPageMotion, openCase, closeCase, animateTextPanel, mountCaseScroll, playEntrance } from './page-motion.js';
 
@@ -12,12 +13,12 @@ const projects = [
   { slug: 'cosmos', name: 'Cosmos', services: 'Branding, UI Design, Dev.', industry: 'Fintech SaaS', description: 'A clear identity for a complex world. Brand strategy, visual identity and a digital experience for the next generation of financial technology.' },
   { slug: 'halvern', name: 'Halvern', services: 'UI Design, Digital', industry: 'Wine & Hospitality', description: 'An expressive digital world at the intersection of wine, place and hospitality. A sensory experience that brings the character of the brand to life.' },
 ];
-const logo = `<svg class="wordmark" viewBox="0 0 1888 192" role="img" aria-label="Osply" preserveAspectRatio="none">
-<path fill="currentColor" fill-rule="evenodd" d="M0 18 55 0H319L374 18V174L319 192H55L0 174ZM171 9V183H203V9Z"/>
-<path fill="currentColor" d="M379 18 434 0H698L753 18V78H550V9H518V91H698L753 110V174L698 192H434L379 174V114H550V183H582V101H434L379 83Z"/>
-<path fill="currentColor" fill-rule="evenodd" d="M758 0H1078L1132 18V90L1078 108H929V192H758ZM929 9V99H961V9Z"/>
-<path fill="currentColor" d="M1137 0H1308V183H1340V114H1511V192H1137Z"/>
-<path fill="currentColor" d="M1516 0H1687V123H1719V0H1888V111L1786 141V192H1619V141L1516 111Z"/>
+const logo = `<svg class="wordmark" viewBox="0 0 1888 192" role="img" aria-label="Osply" preserveAspectRatio="none"><defs><linearGradient id="studio-metal" x1="0" y1="0" x2=".15" y2="1"><stop offset="0" stop-color="#fafbff"/><stop offset=".28" stop-color="#d3d7df"/><stop offset=".47" stop-color="#ffffff"/><stop offset=".51" stop-color="#8e96a6"/><stop offset=".65" stop-color="#edf0f6"/><stop offset="1" stop-color="#a9b4c8"/></linearGradient></defs>
+<path fill="url(#studio-metal)" fill-rule="evenodd" d="M0 18 55 0H319L374 18V174L319 192H55L0 174ZM171 9V183H203V9Z"/>
+<path fill="url(#studio-metal)" d="M379 18 434 0H698L753 18V78H550V9H518V91H698L753 110V174L698 192H434L379 174V114H550V183H582V101H434L379 83Z"/>
+<path fill="url(#studio-metal)" fill-rule="evenodd" d="M758 0H1078L1132 18V90L1078 108H929V192H758ZM929 9V99H961V9Z"/>
+<path fill="url(#studio-metal)" d="M1137 0H1308V183H1340V114H1511V192H1137Z"/>
+<path fill="url(#studio-metal)" d="M1516 0H1687V123H1719V0H1888V111L1786 141V192H1619V141L1516 111Z"/>
 </svg>`;
 const arrow = '<svg class="arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
 const app = document.querySelector('#app');
@@ -30,7 +31,7 @@ let loaderDone = sessionStorage.getItem('osply-visited') === 'yes';
 
 app.innerHTML = `
 <div class="loader ${loaderDone ? 'done' : ''}" aria-hidden="true"><div class="loader-bar"><span>OSPLY — CREATIVE DIGITAL STUDIO</span><span class="progress">0%</span></div></div>
-<main class="studio" id="studio">
+<main class="studio" id="studio"><div class="ambient-light" aria-hidden="true"></div>
   <header class="masthead"><a href="${routeUrl('/')}" class="brand" aria-label="Osply home">${logo}</a>
     <nav class="navigation" aria-label="Main navigation">
       <a class="studio-label" href="${routeUrl('/about')}">Creative Digital Studio</a>
@@ -40,6 +41,8 @@ app.innerHTML = `
   </header>
   <section class="gallery" aria-label="Selected projects" aria-roledescription="carousel" tabindex="0">
     <div class="project-track">${projects.map((p, i) => `<button class="project-card" data-project="${i}" aria-label="Open ${p.name} case study"><img src="${basePath}images/${p.slug}.webp" alt="${p.name} — ${p.industry} brand identity" ${i ? 'loading="eager"' : 'fetchpriority="high"'} draggable="false"/><span class="view-project">VIEW PROJECT ${arrow}</span></button>`).join('')}</div>
+    <div class="project-caption"><div class="caption-kicker"><span class="caption-index">01</span><span>/ SELECTED WORK</span></div><h1 class="project-caption-title">Prism</h1><span class="caption-category">Real Estate</span><div class="caption-rule"><span></span></div></div>
+    <aside class="studio-note" aria-label="Studio disciplines"><span class="note-kicker">INDEPENDENT IN SPIRIT.</span><p>Strategy.<br>Identity.<br>Experience.</p><span class="note-foot">BUILT TO BE FELT. ${arrow}</span></aside>
     <div class="project-info" aria-live="polite"><span class="project-number">1</span><span class="project-services"></span><div class="project-list">${projects.map((p, i) => `<button data-select="${i}">${p.name}</button>`).join('')}</div><span class="project-industry"></span></div>
     <div class="gallery-controls"><button data-step="-1" aria-label="Previous project">↑</button><span>SCROLL TO EXPLORE</span><button data-step="1" aria-label="Next project">↓</button></div>
     <p class="manifesto">CHANNELING CREATIVE ENERGY INTO A STRATEGIC RESOURCE<br>THAT CHANGES THE RULES OF THE GAME AND THE<br>PERCEPTION OF THE BRAND.</p>
@@ -51,6 +54,9 @@ app.innerHTML = `
 
 const gallery = document.querySelector('.gallery');
 const overlay = document.querySelector('#overlay');
+const experience = createExperience();
+let nativeTransition = null;
+let routeRevision = 0;
 const motion = createGalleryMotion(document.querySelector('.project-track'), (index, direction) => {
   if (currentRoute !== '/') return;
   active = index;
@@ -70,6 +76,7 @@ function updateGallery(direction = 0, move = true) {
     card.style.zIndex = offset === 0 ? '3' : '1';
   });
   const p = projects[active];
+  experience.update(p, active);
   document.querySelector('.project-number').textContent = active + 1;
   document.querySelector('.project-services').textContent = p.services;
   document.querySelector('.project-industry').textContent = p.industry;
@@ -89,9 +96,37 @@ function updateGallery(direction = 0, move = true) {
 function select(index) { motion.goTo((index + projects.length) % projects.length, Math.sign(index - active)); }
 
 function navigate(path, replace = false) {
-  if (path === currentRoute) return;
+  if (path === currentRoute && !nativeTransition) return;
   if (replace) history.replaceState({}, '', routeUrl(path)); else history.pushState({}, '', routeUrl(path));
-  renderRoute(path);
+  transitionRoute(path);
+}
+
+function transitionRoute(path) {
+  const revision = ++routeRevision;
+  nativeTransition?.skipTransition();
+  nativeTransition = null;
+  delete document.documentElement.dataset.nativeTransition;
+  experience.hideCursor();
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // The WebGL card uses its own image flight; DOM-to-DOM navigation can morph natively.
+  if (!reduced && document.startViewTransition && currentRoute !== path && currentRoute !== '/' && path !== '/') {
+    document.documentElement.dataset.navigation = path.startsWith('/work/') ? 'project' : 'panel';
+    const transition = document.startViewTransition(async () => {
+      if (revision !== routeRevision) return;
+      renderRoute(path);
+      const hero = overlay.querySelector('.case-hero');
+      if (hero) await hero.decode().catch(() => {});
+    });
+    transition.ready.catch(() => {});
+    nativeTransition = transition;
+    document.documentElement.dataset.nativeTransition = 'running';
+    transition.finished.catch(() => {}).finally(() => {
+      if (nativeTransition === transition) {
+        nativeTransition = null;
+        delete document.documentElement.dataset.nativeTransition;
+      }
+    });
+  } else renderRoute(path);
 }
 
 function renderRoute(path) {
@@ -145,7 +180,7 @@ function renderRoute(path) {
   if (p) {
     if (wasHome && appStarted) openCase(document.querySelector('.project-card.selected'), overlay);
     disposeCaseMotion = mountCaseScroll(overlay);
-  } else animateTextPanel(overlay);
+  } else if (!nativeTransition) animateTextPanel(overlay);
   requestAnimationFrame(() => overlay.querySelector('[data-close]')?.focus({ preventScroll: true }));
 }
 
@@ -221,7 +256,7 @@ document.addEventListener('keydown', e => {
     e.preventDefault(); motion.step(['ArrowDown', 'ArrowRight'].includes(e.key) ? 1 : -1);
   }
 });
-window.addEventListener('popstate', () => renderRoute(routeFromPath(location.pathname)));
+window.addEventListener('popstate', () => transitionRoute(routeFromPath(location.pathname)));
 updateGallery();
 if (routeFromPath(location.pathname) !== '/') renderRoute(routeFromPath(location.pathname));
 appStarted = true;
