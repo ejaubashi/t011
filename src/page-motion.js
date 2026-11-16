@@ -1,3 +1,4 @@
+import { startPortalFlight } from './portal-transition.js';
 const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const flights = new Set();
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
@@ -10,6 +11,12 @@ export function cancelPageMotion() {
 function flyImage(source, destination, opening) {
   const from = source.getBoundingClientRect(), to = destination.getBoundingClientRect();
   if (!from.width || !to.width || reduceMotion()) return;
+  const portal=startPortalFlight(source,destination,opening);
+  if(portal){
+    flights.add(portal);
+    portal.finished.then(()=>flights.delete(portal));
+    return;
+  }
   const image = document.createElement('img');
   image.src = source.tagName === 'IMG' ? source.currentSrc || source.src : source.querySelector('img').currentSrc;
   image.className = 'transition-image';

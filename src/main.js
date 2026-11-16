@@ -1,4 +1,6 @@
 import './style.css';
+import { mountStoryScroll } from './story-scroll.js';
+import { warmPortal } from './portal-transition.js';
 import { createExperience } from './experience.js';
 import { createGalleryMotion } from './gallery-motion.js';
 import { cancelPageMotion, openCase, closeCase, animateTextPanel, mountCaseScroll, playEntrance } from './page-motion.js';
@@ -13,6 +15,12 @@ const projects = [
   { slug: 'cosmos', name: 'Cosmos', services: 'Branding, UI Design, Dev.', industry: 'Fintech SaaS', description: 'A clear identity for a complex world. Brand strategy, visual identity and a digital experience for the next generation of financial technology.' },
   { slug: 'halvern', name: 'Halvern', services: 'UI Design, Digital', industry: 'Wine & Hospitality', description: 'An expressive digital world at the intersection of wine, place and hospitality. A sensory experience that brings the character of the brand to life.' },
 ];
+const statements = {
+  prism: 'A new way<br>to see place.',
+  'ara-niko': 'Culture, made<br>unmistakable.',
+  cosmos: 'Complexity,<br>made clear.',
+  halvern: 'A sense<br>of somewhere.',
+};
 const logo = `<svg class="wordmark" viewBox="0 0 1888 192" role="img" aria-label="Osply" preserveAspectRatio="none"><defs><linearGradient id="studio-metal" x1="0" y1="0" x2=".15" y2="1"><stop offset="0" stop-color="#fafbff"/><stop offset=".28" stop-color="#d3d7df"/><stop offset=".47" stop-color="#ffffff"/><stop offset=".51" stop-color="#8e96a6"/><stop offset=".65" stop-color="#edf0f6"/><stop offset="1" stop-color="#a9b4c8"/></linearGradient></defs>
 <path fill="url(#studio-metal)" fill-rule="evenodd" d="M0 18 55 0H319L374 18V174L319 192H55L0 174ZM171 9V183H203V9Z"/>
 <path fill="url(#studio-metal)" d="M379 18 434 0H698L753 18V78H550V9H518V91H698L753 110V174L698 192H434L379 174V114H550V183H582V101H434L379 83Z"/>
@@ -158,14 +166,15 @@ function renderRoute(path) {
     active = projects.indexOf(p); updateGallery();
     document.title = `${p.name} — ${p.industry} Case Study | OSPLY`;
     const ara = p.slug === 'ara-niko';
-    overlay.innerHTML = `<div class="case-layout">
+    overlay.innerHTML = `<div class="case-layout"><div class="case-progress-line" aria-hidden="true"></div>
       <aside class="case-information">
         <dl><dt>CLIENT:</dt><dd>${p.name}</dd><dt>INDUSTRY:</dt><dd>${p.industry}</dd><dt>SERVICES:</dt><dd>${p.services}</dd><dt>YEAR:</dt><dd>2026</dd></dl>
         <button class="close-case" data-close aria-label="Close case study">CLOSE ${arrow}</button>
-        <div class="case-description"><span>ABOUT:</span><p>${p.description}</p></div><span class="scroll-down">SCROLL DOWN ↓</span>
+        <div class="case-description"><span>ABOUT:</span><p>${p.description}</p></div><div class="case-reading-progress" role="progressbar" aria-label="Case study reading progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><svg viewBox="0 0 40 40" aria-hidden="true"><circle class="reading-base" cx="20" cy="20" r="17"/><circle class="reading-fill" cx="20" cy="20" r="17" pathLength="100"/></svg><span class="reading-percent">0%</span></div>
       </aside>
       <section class="case-scroll" aria-label="${p.name} project imagery" tabindex="0">
         <img class="case-hero" src="${basePath}images/${p.slug}.webp" alt="${p.name} visual identity" />
+        <section class="case-narrative"><div class="story-kicker"><span>CASE STUDY / ${String(active+1).padStart(2,'0')}</span><span>${p.industry.toUpperCase()}</span></div><h2 class="case-story-title">${statements[p.slug]}</h2><p class="story-discipline">${p.services} <span class="story-arrow">${arrow}</span></p></section>
         ${ara ? `<img src="${basePath}images/ara-editorial.webp" alt="Ara Niko editorial website: Cultural perspective takes shape" /><img src="${basePath}images/ara-story.webp" alt="Ara Niko brand story and website presentation" /><img src="${basePath}images/ara-cases.webp" alt="Ara Niko case studies with food and hospitality photography" />` : `<div class="project-editorial ${p.slug}"><div class="editorial-top"><span>${p.name.toUpperCase()}</span><span>IDENTITY / DIGITAL — 2026</span></div><h1>${p.slug === 'prism' ? 'A different<br>perspective.' : p.slug === 'cosmos' ? 'A world of<br>possibility.' : 'Rooted in place.<br>Made to feel.'}</h1><img src="${basePath}images/${p.slug}.webp" alt="${p.name} design direction"/><p>${p.description}</p><span class="editorial-caption">STRATEGY. IDENTITY. EXPERIENCE.</span></div>`}
         <button class="next-case" data-next="${(active + 1) % 4}"><span>NEXT PROJECT ${arrow}</span><strong>${projects[(active + 1) % 4].name}</strong></button>
       </section>
@@ -179,7 +188,9 @@ function renderRoute(path) {
   } else { navigate('/', true); return; }
   if (p) {
     if (wasHome && appStarted) openCase(document.querySelector('.project-card.selected'), overlay);
-    disposeCaseMotion = mountCaseScroll(overlay);
+    const disposeImages = mountCaseScroll(overlay);
+    const disposeStory = mountStoryScroll(overlay);
+    disposeCaseMotion = () => { disposeImages(); disposeStory(); };
   } else if (!nativeTransition) animateTextPanel(overlay);
   requestAnimationFrame(() => overlay.querySelector('[data-close]')?.focus({ preventScroll: true }));
 }
@@ -260,6 +271,8 @@ window.addEventListener('popstate', () => transitionRoute(routeFromPath(location
 updateGallery();
 if (routeFromPath(location.pathname) !== '/') renderRoute(routeFromPath(location.pathname));
 appStarted = true;
+if ('requestIdleCallback' in window) requestIdleCallback(warmPortal,{timeout:2000});
+else setTimeout(warmPortal,1500);
 if (loaderDone && currentRoute === '/') playEntrance(motion, true);
 if (!loaderDone) {
   const start = performance.now();

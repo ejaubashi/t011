@@ -18,10 +18,12 @@ with sync_playwright() as p:
  assert page.locator('.transition-image').count()==1
  page.screenshot(path='/tmp/osply-checks/motion-open.png')
  page.wait_for_timeout(1000)
+ page.wait_for_function("!document.querySelector('.transition-image')",polling=100)
  assert page.locator('.transition-image').count()==0
  page.locator('.case-scroll').hover();page.mouse.wheel(0,600);page.wait_for_timeout(500)
  assert page.locator('.scroll-reveal.is-revealed').count()>0
  page.keyboard.press('Escape');page.wait_for_timeout(800)
+ page.wait_for_function("!document.querySelector('.transition-image')",polling=100)
  assert page.locator('.transition-image').count()==0
  fallback=b.new_context(reduced_motion='reduce')
  fallback.add_init_script("const original = HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext = function(type, ...args) { if (type === 'webgl') return null; return original.call(this, type, ...args); };")
@@ -46,8 +48,10 @@ with sync_playwright() as p:
  mobile.wait_for_timeout(1300)
  assert mobile.locator('.project-card.selected').get_attribute('data-project') != '0'
  mobile.locator('.project-card.selected').click();mobile.wait_for_timeout(1100)
+ mobile.locator('.case-hero').wait_for(state='visible')
  assert mobile.locator('.case-hero').is_visible()
  mobile.keyboard.press('Escape');mobile.wait_for_timeout(800)
+ mobile.wait_for_function("!document.querySelector('.transition-image')",polling=100)
  assert mobile.locator('.transition-image').count()==0
  print('WebGL curve, image transition, scroll reveal, cleanup, fallback, reduced motion: passed')
  print('Errors:',json.dumps(errors));assert not errors

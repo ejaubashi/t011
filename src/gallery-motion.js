@@ -15,6 +15,7 @@ varying vec2 vUv;
 varying float vLight;
 varying vec2 vScreenUv;
 varying vec2 vSurfaceUv;
+varying vec3 vNormal;
 void main() {
   vUv = aPosition * uUvScale + .5;
   vSurfaceUv = aPosition + .5;
@@ -27,6 +28,11 @@ void main() {
   float cy = cos(uRotation.y), sy = sin(uRotation.y);
   p.yz = vec2(p.y * cx - p.z * sx, p.y * sx + p.z * cx);
   p.xz = vec2(p.x * cy + p.z * sy, -p.x * sy + p.z * cy);
+  float slope=-sin(aPosition.x*3.14159265)*3.14159265*uBend*uSize.y*.85/uSize.x;
+  vec3 normal=normalize(vec3(-slope,0.,1.));
+  normal.yz=vec2(normal.y*cx-normal.z*sx,normal.y*sx+normal.z*cx);
+  normal.xz=vec2(normal.x*cy+normal.z*sy,-normal.x*sy+normal.z*cy);
+  vNormal=normal;
   float focal = max(uViewport.y, 900.0) * 1.35;
   float w = 1.0 - (p.z + uDepth) / focal;
   vec2 center = vec2(uCenter.x / uViewport.x * 2.0 - 1.0, 1.0 - uCenter.y / uViewport.y * 2.0);
@@ -42,6 +48,9 @@ uniform float uFocus;
 uniform float uOpacity;
 uniform float uFluid;
 uniform float uSpeed;
+uniform vec2 uLightPosition;
+uniform float uLightStrength;
+varying vec3 vNormal;
 varying vec2 vUv;
 varying vec2 vScreenUv;
 varying vec2 vSurfaceUv;
@@ -60,6 +69,14 @@ void main() {
   float edge=min(min(vSurfaceUv.x,1.-vSurfaceUv.x),min(vSurfaceUv.y,1.-vSurfaceUv.y));
   float rim=(1.-smoothstep(0.,.007,edge))*.12*uFocus;
   color+=vec3(.65,.78,.95)*(field.b*.075*uFocus*uFluid+rim);
+  vec3 normal=normalize(vNormal);
+  vec3 light=normalize(vec3((uLightPosition-.5)*vec2(1.4,-1.4),1.1));
+  vec3 halfVector=normalize(light+vec3(0.,0.,1.));
+  float specular=pow(max(dot(normal,halfVector),0.),36.);
+  vec2 spot=(vSurfaceUv-uLightPosition)*vec2(1.,1.25);
+  float strength=uLightStrength*uFocus;
+  color*=mix(1.,.94+.06*max(dot(normal,light),0.),strength);
+  color+=mix(vec3(.9,.8,.65),vec3(.65,.8,1.),uLightPosition.x)*specular*exp(-dot(spot,spot)*4.5)*.055*strength;
   float alpha=uOpacity*smoothstep(0.,.002,edge);
   gl_FragColor=vec4(color*mix(.4,1.,uFocus)*vLight*alpha,alpha);
 }`;
@@ -74,7 +91,7 @@ export function createGalleryMotion(track, onSelect = () => {}) {
   canvas.setAttribute('aria-hidden', 'true');
   track.prepend(canvas);
   let gl, program, buffers, uniforms, flow, textures = [];
-  let lastPointer = null;
+  let lastPointer = null, lightStrength = 0;
   const physics = createReelPhysics(cards.length);
   let frame = 0, lastTime = 0, selected = 0;
   let pixelRatio = Math.min(devicePixelRatio || 1, 1.75), frameAverage = 16.67, slowFrames = 0;
@@ -104,7 +121,7 @@ export function createGalleryMotion(track, onSelect = () => {}) {
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error('Reel program linking failed');
     gl.useProgram(program);
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    uniforms = Object.fromEntries(['uViewport','uCenter','uSize','uUvScale','uBend','uDepth','uRotation','uFocus','uOpacity','uFlow','uFluid','uSpeed'].map(name => [name, gl.getUniformLocation(program, name)]));
+    uniforms = Object.fromEntries(['uViewport','uCenter','uSize','uUvScale','uBend','uDepth','uRotation','uFocus','uOpacity','uFlow','uFluid','uSpeed','uLightPosition','uLightStrength'].map(name => [name, gl.getUniformLocation(program, name)]));
     const vertices = [], indices = [], columns = 40, rows = 24;
     for (let y = 0; y <= rows; y++) for (let x = 0; x <= columns; x++) vertices.push(x / columns - .5, y / rows - .5);
     for (let y = 0; y < rows; y++) for (let x = 0; x < columns; x++) {
@@ -153,8 +170,16 @@ export function createGalleryMotion(track, onSelect = () => {}) {
     const before = physics.position;
     physics.step(dt / 1000, time, reduced.matches);
     const { position, velocity } = physics;
+    const modalOpen=document.body.classList.contains('overlay-open');
+    if(modalOpen){
+      if(flow?.energy)flow.clear();
+      px=py=pointerX=pointerY=0;lastPointer=null;
+    }
     const ease = reduced.matches ? 1 : 1 - Math.exp(-dt / 110);
     pointerX += (px - pointerX) * ease; pointerY += (py - pointerY) * ease;
+    const lightTarget=!reduced.matches && lastPointer && Math.abs(lastPointer.x-width/2)<cardWidth*.55 && Math.abs(lastPointer.y-centerY)<cardHeight*.55?1:0;
+    lightStrength=reduced.matches?0:lightStrength+(lightTarget-lightStrength)*ease;
+    track.dataset.lightStrength=lightStrength.toFixed(3);
     if (selected !== physics.index) {
       selected = physics.index;
       onSelect(selected, Math.sign(position - before) || Math.sign(velocity));
@@ -207,6 +232,8 @@ export function createGalleryMotion(track, onSelect = () => {}) {
       gl.uniform1i(uniforms.uFlow, 1);
       gl.uniform1f(uniforms.uFluid, flow && !reduced.matches ? 1 : 0);
       gl.uniform1f(uniforms.uSpeed, reduced.matches ? 0 : clamp(velocity, -4, 4)*focus);
+      gl.uniform2f(uniforms.uLightPosition,lastPointer?clamp((lastPointer.x-x)/(cardWidth*scale)+.5,-.2,1.2):.5,lastPointer?clamp((lastPointer.y-y)/(cardHeight*scale)+.5,-.2,1.2):.5);
+      gl.uniform1f(uniforms.uLightStrength,lightStrength);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, textures[i]);
       gl.uniform2f(uniforms.uCenter, x, y); gl.uniform2f(uniforms.uSize, cardWidth * scale, cardHeight * scale);
       const image = cards[i].querySelector('img');
@@ -218,7 +245,7 @@ export function createGalleryMotion(track, onSelect = () => {}) {
       gl.uniform1f(uniforms.uFocus, focus); gl.uniform1f(uniforms.uOpacity, opacity); gl.drawElements(gl.TRIANGLES, buffers.count, gl.UNSIGNED_SHORT, 0);
     });
     track.dataset.flowEnergy = (flow?.energy || 0).toFixed(3);
-    if ((flow?.energy || 0) > .002 || physics.mode !== 'idle' || Math.abs(px - pointerX) + Math.abs(py - pointerY) > .002) wake();
+    if (Math.abs(lightTarget-lightStrength)>.002 || (flow?.energy || 0) > .002 || physics.mode !== 'idle' || Math.abs(px - pointerX) + Math.abs(py - pointerY) > .002) wake();
     else lastTime = 0;
   }
   function wake() { if (!frame) frame = requestAnimationFrame(draw); }
@@ -233,6 +260,7 @@ export function createGalleryMotion(track, onSelect = () => {}) {
     lastPointer={x:e.clientX,y:e.clientY,time:now}; wake();
   });
   track.parentElement.addEventListener('pointerdown', e => { lastPointer={x:e.clientX,y:e.clientY,time:performance.now()}; }, {passive:true});
+  track.parentElement.addEventListener('pointerup',e=>{if(e.pointerType==='touch'){lastPointer=null;wake();}}, {passive:true});
   track.parentElement.addEventListener('pointerleave', () => { px = py = 0; lastPointer = null; wake(); });
   reduced.addEventListener('change', () => { if (reduced.matches) { px = py = 0; flow?.clear(); } wake(); });
   new ResizeObserver(resize).observe(track);

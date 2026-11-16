@@ -26,6 +26,14 @@ Project openings use a sculpted image flight and a short light bloom. Navigation
 
 Research references and the implemented scope are recorded in [the visual implementation notes](docs/liquid-metal-implementation.md).
 
+## Cinematic case studies
+
+Project openings now use a reusable GPU portal compositor: the selected image expands through a refractive aperture before settling into its case-study hero. It prewarms at idle, restricts fragment work to the image bounds, and reduces resolution after slow frames. Scroll, pointer input, resize, visibility changes and route cancellation release the transition immediately. The existing image-flight fallback remains available without WebGL.
+
+Each case study has a short editorial headline with a scroll-linked ink fill. Supporting browsers use CSS view timelines; other browsers use the same reveal ranges through a scroll callback. Reduced motion shows complete text immediately. An accessible reading-progress indicator follows the active desktop or mobile scrolling container.
+
+The gallery lighting now follows the bent mesh normal, with a moving specular highlight and warm/cool reflection tint. The gallery's fluid and pointer lighting settle while a case study is open.
+
 ## Interactions
 
 - The project reel uses a perspective-projected WebGL surface with depth deformation, subtle directional shading, cover-correct texture cropping, pointer tilt and a DOM image fallback. Canvas resolution decreases after sustained slow rendering frames.
@@ -52,6 +60,7 @@ python tests/smoke.py
 python tests/motion.py
 python tests/reel-browser.py
 python tests/special-effects.py
+python tests/cinematic-effects.py
 node --test tests/reel-physics.test.js
 ```
 
